@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <thread>
 #include <opencv2/opencv.hpp>
+#include <condition_variable>
 
 #include "mmtcp/TcpServerSocket.h"
 #include "utils/Time.h"
@@ -12,6 +13,7 @@
 using namespace std;
 using cv::VideoCapture;
 
+std::condition_variable gFrameReadyStatus;
 std::mutex globalMutex;
 cv::Mat globalSharedMat;
 volatile uint64_t gFrameTime = 0;
@@ -39,7 +41,8 @@ void sendImageThread() {
             uint32_t deltaTime;
             uint64_t startTime;
             {
-                std::scoped_lock lk(globalMutex);
+                std::unique_lock lk(globalMutex);
+                gFrameReadyStatus.wait(lk);
                 targetImg = fix_distortion(globalSharedMat, 2 - 1);
                 deltaTime = gFrameCost;
                 startTime = gFrameTime;
@@ -76,6 +79,7 @@ int main() {
             gFrameCost = cost;
             gFrameTime = st;
         }
+        gFrameReadyStatus.notify_all();
         if (st - lastUpdate > 100) {
             cv::imshow("MainWindow", rawImg);
             if (cv::waitKey(1) == '1') {
